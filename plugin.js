@@ -1,7 +1,7 @@
 /**
- * 셀러들의 아지트 디자이너 — HTML to Figma 플러그인
- * HTML+인라인CSS를 직접 파싱하여 편집 가능한 Figma 레이아웃으로 변환합니다.
- * JSON 중간 변환 없이, 원본 HTML의 스타일을 최대한 보존합니다.
+ * 셀러들의 아지트 디자이너 — HTML to Figma 플러그인 v3
+ * HTML DOM 트리를 재귀적으로 순회하여 Figma 노드 트리로 변환합니다.
+ * grid/flex 레이아웃 → Figma Auto Layout 변환 지원.
  */
 
 figma.showUI(__html__, { width: 480, height: 620 });
@@ -15,12 +15,9 @@ figma.ui.onmessage = async function(msg) {
   }
 };
 
-// ── 메인 HTML 임포트 ──
-
 async function handleHtmlImport(html, title) {
   try {
-    figma.ui.postMessage({ type: "progress", step: "폰트 로딩 중...", percent: 5 });
-
+    progress("폰트 로딩 중...", 5);
     var fonts = [
       { family: "Inter", style: "Regular" },
       { family: "Inter", style: "Medium" },
@@ -31,18 +28,28 @@ async function handleHtmlImport(html, title) {
       try { await figma.loadFontAsync(fonts[i]); } catch (e) { /* skip */ }
     }
 
-    figma.ui.postMessage({ type: "progress", step: "HTML 파싱 중...", percent: 10 });
+    progress("HTML 파싱 중...", 10);
 
-    // HTML 파싱 — 간단한 DOM 파서
-    var sections = parseHtmlSections(html);
+    // 캔버스 너비 추출
+    var canvasWidth = 860;
+    var wm = html.match(/width\s*:\s*(\d+)\s*px/);
+    if (wm) canvasWidth = parseInt(wm[1]);
 
-    figma.ui.postMessage({ type: "progress", step: "Figma 레이아웃 생성 중...", percent: 20 });
+    // 섹션 분리
+    var sectionHtmls = html.split(/(?=<div[^>]*data-section-type)/i);
+    var sections = [];
+    for (var i = 0; i < sectionHtmls.length; i++) {
+      var s = sectionHtmls[i].trim();
+      if (s && s.match(/data-section-type/)) sections.push(s);
+    }
+
+    if (sections.length === 0) {
+      figma.notify("섹션을 찾을 수 없습니다.", { error: true });
+      figma.ui.postMessage({ type: "fail", message: "data-section-type 속성이 있는 섹션을 찾을 수 없습니다." });
+      return;
+    }
 
     // 최상위 프레임
-    var canvasWidth = 860;
-    var widthMatch = html.match(/width\s*:\s*(\d+)\s*px/);
-    if (widthMatch) canvasWidth = parseInt(widthMatch[1]);
-
     var root = figma.createFrame();
     root.name = title || "상세페이지";
     root.resize(canvasWidth, 100);
@@ -52,18 +59,14 @@ async function handleHtmlImport(html, title) {
     root.fills = [solid("#FFFFFF")];
 
     for (var s = 0; s < sections.length; s++) {
-      figma.ui.postMessage({
-        type: "progress",
-        step: "섹션 " + (s + 1) + "/" + sections.length + " 생성 중...",
-        percent: Math.round(20 + (s / sections.length) * 70),
-      });
-      var sectionFrame = await buildSectionFromHtml(sections[s], canvasWidth);
-      if (sectionFrame) root.appendChild(sectionFrame);
+      progress("섹션 " + (s+1) + "/" + sections.length, Math.round(15 + (s/sections.length)*80));
+      var sectionNode = await htmlToFigmaNode(sections[s], canvasWidth);
+      if (sectionNode) root.appendChild(sectionNode);
     }
 
     figma.currentPage.appendChild(root);
     figma.viewport.scrollAndZoomIntoView([root]);
-    figma.ui.postMessage({ type: "progress", step: "완료!", percent: 100 });
+    progress("완료!", 100);
     figma.notify(sections.length + "개 섹션 생성 완료!");
     figma.ui.postMessage({ type: "done", count: sections.length });
   } catch (err) {
@@ -72,375 +75,392 @@ async function handleHtmlImport(html, title) {
   }
 }
 
-// ── HTML 섹션 파싱 ──
+// ── 핵심: HTML → Figma 노드 변환 (재귀) ──
 
-function parseHtmlSections(html) {
-  // data-section-type으로 분리
-  var parts = html.split(/(?=<div[^>]*data-section-type)/i);
-  var sections = [];
-  for (var i = 0; i < parts.length; i++) {
-    var part = parts[i].trim();
-    if (!part) continue;
-    var typeMatch = part.match(/data-section-type="([^"]*)"/);
-    if (!typeMatch) continue;
-    sections.push({
-      type: typeMatch[1],
-      html: part,
-    });
+async function htmlToFigmaNode(html, parentWidth) {
+  // 현재 태그 정보 추출
+  var tagMatch = html.match(/^<(\w+)([^>]*)>/);
+  if (!tagMatch) return null;
+
+  var tag = tagMatch[1].toLowerCase();
+  var attrs = tagMatch[2] || "";
+  var style = parseStyleAttr(attrs);
+
+  // 무시할 태그
+  if (attrs.indexOf("data-element-toolbar") !== -1) return null;
+  if (attrs.indexOf("data-resize-handle") !== -1) return null;
+  if (attrs.indexOf("data-img-selection") !== -1) return null;
+
+  // <img> 태그
+  if (tag === "img") {
+    return await buildImgNode(attrs, style, parentWidth);
   }
-  return sections;
-}
 
-// ── 섹션 빌더 ──
+  // <hr> 태그
+  if (tag === "hr") {
+    var hr = figma.createRectangle();
+    hr.name = "구분선";
+    hr.resize(parentWidth, 1);
+    hr.fills = [solid(getColor(style, "border-top-color") || getColor(style, "border-color") || "#E5E7EB")];
+    return hr;
+  }
 
-async function buildSectionFromHtml(section, canvasWidth) {
+  // 자식 HTML 추출
+  var innerHtml = extractInnerHtml(html, tag);
+  var directText = getDirectText(innerHtml);
+  var childTags = splitChildTags(innerHtml);
+
+  // 텍스트 전용 요소 (자식 태그 없이 텍스트만)
+  var textTags = ["h1","h2","h3","h4","h5","h6","p","span","strong","em","li","blockquote","a"];
+  if (textTags.indexOf(tag) !== -1 && childTags.length === 0 && directText) {
+    return buildTextNode(directText, tag, style, parentWidth);
+  }
+
+  // 텍스트 태그인데 자식에 inline 요소만 있으면 전체 텍스트 추출
+  if (textTags.indexOf(tag) !== -1 && directText) {
+    var fullText = stripTags(innerHtml).trim();
+    if (fullText && fullText !== "⠿") {
+      return buildTextNode(fullText, tag, style, parentWidth);
+    }
+  }
+
+  // 컨테이너 요소 (div, section, header, nav, footer 등)
+  if (childTags.length === 0 && directText) {
+    // 자식 없는 div에 텍스트만 있으면 텍스트 노드
+    return buildTextNode(directText, tag, style, parentWidth);
+  }
+
+  if (childTags.length === 0) return null;
+
+  // 프레임 생성
   var frame = figma.createFrame();
-  frame.name = section.type || "Section";
-  frame.resize(canvasWidth, 10);
-  frame.layoutMode = "VERTICAL";
-  frame.primaryAxisSizingMode = "AUTO";
-  frame.counterAxisSizingMode = "FIXED";
-  frame.itemSpacing = 16;
+  frame.name = style["data-section-type"] || getAttr(attrs, "data-section-type") || tag;
 
-  // 섹션 스타일 추출
-  var sectionStyle = extractInlineStyle(section.html);
-  var bg = getColorFromStyle(sectionStyle, "background") || getColorFromStyle(sectionStyle, "background-color") || "#FFFFFF";
-  frame.fills = [solid(bg)];
+  // 너비 결정
+  var w = getNum(style, "width") || parentWidth;
+  if (style["width"] && style["width"].indexOf("100%") !== -1) w = parentWidth;
+  w = Math.min(w, parentWidth);
+  frame.resize(w, 10);
+
+  // 배경색
+  var bg = getColor(style, "background-color") || getColor(style, "background");
+  if (bg) {
+    frame.fills = [solid(bg)];
+  } else {
+    frame.fills = [];
+  }
+
+  // 레이아웃 모드 결정
+  var display = style["display"] || "";
+  var gridCols = style["grid-template-columns"] || "";
+  var flexDir = style["flex-direction"] || "";
+
+  if (display.indexOf("grid") !== -1 && gridCols) {
+    // Grid → HORIZONTAL Auto Layout
+    frame.layoutMode = "HORIZONTAL";
+    frame.primaryAxisSizingMode = "FIXED";
+    frame.counterAxisSizingMode = "AUTO";
+    frame.layoutWrap = "WRAP";
+    var gap = getNum(style, "gap") || getNum(style, "column-gap") || 16;
+    frame.itemSpacing = gap;
+  } else if (display.indexOf("flex") !== -1 && (flexDir === "row" || !flexDir || flexDir === "")) {
+    // Flex row → HORIZONTAL
+    frame.layoutMode = "HORIZONTAL";
+    frame.primaryAxisSizingMode = "FIXED";
+    frame.counterAxisSizingMode = "AUTO";
+    var gap = getNum(style, "gap") || 16;
+    frame.itemSpacing = gap;
+
+    // align-items
+    var alignItems = style["align-items"] || "";
+    if (alignItems === "center") frame.counterAxisAlignItems = "CENTER";
+  } else {
+    // 기본 VERTICAL
+    frame.layoutMode = "VERTICAL";
+    frame.primaryAxisSizingMode = "AUTO";
+    frame.counterAxisSizingMode = "FIXED";
+    var gap = getNum(style, "gap") || getNum(style, "row-gap") || 12;
+    frame.itemSpacing = gap;
+  }
 
   // 패딩
-  var padding = getNumFromStyle(sectionStyle, "padding") || 50;
-  frame.paddingTop = padding;
-  frame.paddingBottom = padding;
-  frame.paddingLeft = padding;
-  frame.paddingRight = padding;
+  var pt = getNum(style, "padding-top") || getNum(style, "padding") || 0;
+  var pr = getNum(style, "padding-right") || getNum(style, "padding") || 0;
+  var pb = getNum(style, "padding-bottom") || getNum(style, "padding") || 0;
+  var pl = getNum(style, "padding-left") || getNum(style, "padding") || 0;
+  frame.paddingTop = pt;
+  frame.paddingRight = pr;
+  frame.paddingBottom = pb;
+  frame.paddingLeft = pl;
 
-  // 텍스트 정렬 기본값
-  var sectionAlign = sectionStyle["text-align"] || "left";
+  // border-radius
+  var br = getNum(style, "border-radius");
+  if (br) frame.cornerRadius = br;
 
-  // 섹션 내 요소들 파싱
-  var elements = parseElements(section.html);
-  var contentWidth = canvasWidth - padding * 2;
+  // 자식 너비 계산
+  var contentWidth = w - pl - pr;
+  var colCount = 1;
+  if (gridCols) {
+    // grid-template-columns: 1fr 1fr 또는 repeat(2, 1fr) 등
+    var frMatch = gridCols.match(/(\d+)fr/g);
+    var pxMatch = gridCols.match(/(\d+)px/g);
+    if (frMatch) colCount = frMatch.length;
+    else if (pxMatch) colCount = pxMatch.length;
+    var repeatMatch = gridCols.match(/repeat\((\d+)/);
+    if (repeatMatch) colCount = parseInt(repeatMatch[1]);
+  }
+  var childWidth = colCount > 1 ? Math.floor((contentWidth - (colCount-1) * (getNum(style,"gap")||16)) / colCount) : contentWidth;
 
-  for (var i = 0; i < elements.length; i++) {
-    var el = elements[i];
-    var node = await buildElement(el, contentWidth, sectionAlign, sectionStyle);
-    if (node) frame.appendChild(node);
+  // 자식 노드 생성
+  for (var c = 0; c < childTags.length; c++) {
+    var childNode = await htmlToFigmaNode(childTags[c], childWidth);
+    if (childNode) {
+      // grid 자식 너비 설정
+      if (colCount > 1 && childNode.resize) {
+        try { childNode.resize(childWidth, childNode.height); } catch(e) { /* skip */ }
+      }
+      frame.appendChild(childNode);
+    }
   }
 
   return frame;
 }
 
-// ── 요소 파싱 (HTML 태그 추출) ──
+// ── 이미지 노드 ──
 
-function parseElements(html) {
-  var elements = [];
-  // img 태그 추출
-  var imgRe = /<img[^>]*>/gi;
-  // 텍스트 태그 추출
-  var textRe = /<(h[1-6]|p|span|strong|em|li|blockquote|div)([^>]*)>([\s\S]*?)<\/\1>/gi;
-  // hr 태그
-  var hrRe = /<hr[^>]*\/?>/gi;
+async function buildImgNode(attrs, style, parentWidth) {
+  var src = getAttr(attrs, "src");
+  if (!src) return null;
 
-  // 순서를 유지하기 위해 모든 태그의 위치를 기록
-  var allMatches = [];
+  var w = getNum(style, "width") || parentWidth;
+  var h = getNum(style, "height") || 400;
+  if (style["width"] && style["width"].indexOf("100%") !== -1) w = parentWidth;
+  w = Math.min(w, parentWidth);
 
-  // img
-  var m;
-  while ((m = imgRe.exec(html)) !== null) {
-    var src = "";
-    var srcMatch = m[0].match(/src="([^"]*)"/);
-    if (srcMatch) src = srcMatch[1];
-    if (!src) continue;
-    var imgStyle = extractInlineStyleFromTag(m[0]);
-    allMatches.push({
-      index: m.index,
-      type: "image",
-      src: src,
-      style: imgStyle,
-      alt: (m[0].match(/alt="([^"]*)"/) || ["", ""])[1],
-    });
+  var br = getNum(style, "border-radius") || 0;
+  var alt = getAttr(attrs, "alt") || "사진";
+
+  if (src) {
+    try {
+      var image = await figma.createImageAsync(src);
+      var rect = figma.createRectangle();
+      rect.name = alt;
+      rect.resize(w, h);
+      if (br) rect.cornerRadius = br;
+      rect.fills = [{ type: "IMAGE", imageHash: image.hash, scaleMode: "FILL" }];
+      return rect;
+    } catch (e) { /* fall through to placeholder */ }
   }
 
-  // hr
-  while ((m = hrRe.exec(html)) !== null) {
-    allMatches.push({ index: m.index, type: "hr" });
-  }
-
-  // text
-  while ((m = textRe.exec(html)) !== null) {
-    var tag = m[1].toLowerCase();
-    var attrs = m[2];
-    var innerHtml = m[3];
-
-    // 내부 텍스트만 추출 (중첩 태그 제거)
-    var text = innerHtml.replace(/<[^>]+>/g, "").trim();
-    // HTML 엔티티 디코드
-    text = text.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-
-    if (!text || text === "⠿") continue;
-
-    // data-section-type이 있는 div는 건너뛰기 (섹션 자체)
-    if (tag === "div" && attrs.indexOf("data-section-type") !== -1) continue;
-    // 에디터 UI 요소 건너뛰기
-    if (attrs.indexOf("data-element-toolbar") !== -1) continue;
-    if (attrs.indexOf("data-resize-handle") !== -1) continue;
-
-    var elStyle = extractInlineStyleFromAttrs(attrs);
-    allMatches.push({
-      index: m.index,
-      type: "text",
-      tag: tag,
-      text: text,
-      style: elStyle,
-    });
-  }
-
-  // 위치순 정렬
-  allMatches.sort(function(a, b) { return a.index - b.index; });
-
-  // 중복 제거 (같은 텍스트가 부모-자식에서 중복 추출될 수 있음)
-  var seen = {};
-  for (var i = 0; i < allMatches.length; i++) {
-    var el = allMatches[i];
-    if (el.type === "text") {
-      var key = el.text.substring(0, 50);
-      if (seen[key]) {
-        // 이전 것보다 스타일이 더 구체적이면 교체
-        if (Object.keys(el.style).length > Object.keys(seen[key].style).length) {
-          var prevIdx = elements.indexOf(seen[key]);
-          if (prevIdx !== -1) elements[prevIdx] = el;
-          seen[key] = el;
-        }
-        continue;
-      }
-      seen[key] = el;
-    }
-    elements.push(el);
-  }
-
-  return elements;
+  var ph = figma.createFrame();
+  ph.name = alt;
+  ph.resize(w, h);
+  ph.fills = [solid("#F1F3F5")];
+  if (br) ph.cornerRadius = br;
+  return ph;
 }
 
-// ── 요소 빌더 ──
+// ── 텍스트 노드 ──
 
-async function buildElement(el, contentWidth, parentAlign, parentStyle) {
-  if (el.type === "image") {
-    return await buildImage(el, contentWidth);
-  }
-  if (el.type === "hr") {
-    var line = figma.createRectangle();
-    line.name = "구분선";
-    line.resize(contentWidth, 1);
-    line.fills = [solid("#E5E7EB")];
-    return line;
-  }
-  if (el.type === "text") {
-    return buildText(el, contentWidth, parentAlign, parentStyle);
-  }
-  return null;
-}
+function buildTextNode(text, tag, style, parentWidth) {
+  if (!text || text === "⠿") return null;
 
-// ── 텍스트 빌더 ──
-
-function buildText(el, contentWidth, parentAlign, parentStyle) {
   var node = figma.createText();
-  node.name = el.tag || "text";
+  node.name = tag;
 
-  // 폰트 크기 결정
-  var fontSize = getNumFromStyle(el.style, "font-size");
-  if (!fontSize) {
-    // 부모 스타일에서 상속
-    fontSize = getNumFromStyle(parentStyle, "font-size");
-  }
-  if (!fontSize) {
-    // 태그 기본값
-    var defaults = { h1: 48, h2: 36, h3: 28, h4: 24, h5: 20, h6: 18, p: 16, span: 16, strong: 16, em: 16, li: 16, div: 16 };
-    fontSize = defaults[el.tag] || 16;
+  // 폰트 크기
+  var size = getNum(style, "font-size");
+  if (!size) {
+    var defs = {h1:48, h2:36, h3:28, h4:24, h5:20, h6:18, p:16, span:15, strong:16, em:16, li:16, div:16, a:16};
+    size = defs[tag] || 16;
   }
 
   // 폰트 굵기
-  var fontWeight = getNumFromStyle(el.style, "font-weight");
-  if (!fontWeight) fontWeight = getNumFromStyle(parentStyle, "font-weight");
-  if (!fontWeight) {
-    fontWeight = (el.tag && (el.tag.charAt(0) === "h" || el.tag === "strong")) ? 700 : 400;
-  }
+  var weight = getNum(style, "font-weight");
+  if (!weight) weight = (tag.charAt(0)==="h" || tag==="strong") ? 700 : 400;
 
   // 색상
-  var color = getColorFromStyle(el.style, "color");
-  if (!color) color = getColorFromStyle(parentStyle, "color");
-  if (!color) color = "#111827";
+  var color = getColor(style, "color") || "#111827";
 
   // 정렬
-  var align = el.style["text-align"] || parentAlign || "left";
+  var align = style["text-align"] || "left";
 
-  // 적용
-  node.fontName = { family: "Inter", style: weightToStyle(fontWeight) };
-  node.fontSize = fontSize;
-  node.characters = el.text;
+  node.fontName = { family: "Inter", style: wts(weight) };
+  node.fontSize = size;
+  node.characters = text;
   node.fills = [solid(color)];
 
-  // 텍스트 너비
-  var textWidth = getNumFromStyle(el.style, "width") || contentWidth;
-  node.resize(Math.min(textWidth, contentWidth), node.height);
+  var tw = getNum(style, "width") || parentWidth;
+  node.resize(Math.min(tw, parentWidth), node.height);
   node.textAutoResize = "HEIGHT";
 
-  // 정렬
   if (align === "center") node.textAlignHorizontal = "CENTER";
   else if (align === "right") node.textAlignHorizontal = "RIGHT";
 
-  // 행간
-  node.lineHeight = { value: fontSize * (fontSize >= 28 ? 1.3 : 1.7), unit: "PIXELS" };
+  node.lineHeight = { value: size * (size >= 28 ? 1.3 : 1.7), unit: "PIXELS" };
 
-  // 자간
-  var letterSpacing = getNumFromStyle(el.style, "letter-spacing");
-  if (letterSpacing) node.letterSpacing = { value: letterSpacing, unit: "PIXELS" };
+  var ls = getNum(style, "letter-spacing");
+  if (ls) node.letterSpacing = { value: ls, unit: "PIXELS" };
 
   return node;
 }
 
-// ── 이미지 빌더 ──
+// ── HTML 파싱 유틸리티 ──
 
-async function buildImage(el, contentWidth) {
-  var w = getNumFromStyle(el.style, "width") || contentWidth;
-  var h = getNumFromStyle(el.style, "height") || 400;
-  w = Math.min(w, contentWidth);
+function extractInnerHtml(html, tag) {
+  // 첫 번째 여는 태그 이후, 마지막 닫는 태그 이전의 내용
+  var openEnd = html.indexOf(">");
+  if (openEnd === -1) return "";
+  var closeTag = "</" + tag + ">";
+  var closeIdx = html.lastIndexOf(closeTag);
+  if (closeIdx === -1) return html.substring(openEnd + 1);
+  return html.substring(openEnd + 1, closeIdx);
+}
 
-  // 100% 너비 처리
-  if (el.style["width"] && el.style["width"].indexOf("100%") !== -1) {
-    w = contentWidth;
-  }
+function splitChildTags(html) {
+  // 직접 자식 태그를 분리 (depth 추적)
+  var children = [];
+  var depth = 0;
+  var current = "";
+  var i = 0;
+  var len = html.length;
 
-  if (el.src) {
-    try {
-      var image = await figma.createImageAsync(el.src);
-      var rect = figma.createRectangle();
-      rect.name = el.alt || "사진";
-      rect.resize(w, h);
+  while (i < len) {
+    if (html[i] === "<") {
+      // 닫는 태그 확인
+      if (html[i+1] === "/") {
+        depth--;
+        if (depth < 0) depth = 0;
+        // 닫는 태그 끝까지 포함
+        var closeEnd = html.indexOf(">", i);
+        if (closeEnd !== -1) {
+          current += html.substring(i, closeEnd + 1);
+          i = closeEnd + 1;
+        } else {
+          current += html[i];
+          i++;
+        }
+        if (depth === 0 && current.trim()) {
+          children.push(current.trim());
+          current = "";
+        }
+        continue;
+      }
 
-      var borderRadius = getNumFromStyle(el.style, "border-radius") || 0;
-      rect.cornerRadius = borderRadius;
+      // self-closing 태그 확인 (img, hr, br, input)
+      var selfMatch = html.substring(i).match(/^<(img|hr|br|input|meta|link)([^>]*)\/?>/i);
+      if (selfMatch) {
+        if (depth === 0) {
+          children.push(selfMatch[0]);
+        } else {
+          current += selfMatch[0];
+        }
+        i += selfMatch[0].length;
+        continue;
+      }
 
-      rect.fills = [{ type: "IMAGE", imageHash: image.hash, scaleMode: "FILL" }];
-      return rect;
-    } catch (e) {
-      // 이미지 로드 실패 — 자리표시자
+      // 여는 태그
+      depth++;
+      current += html[i];
+      i++;
+    } else {
+      if (depth === 0) {
+        // 최상위 레벨의 텍스트는 무시 (자식 태그만 추출)
+        i++;
+      } else {
+        current += html[i];
+        i++;
+      }
     }
   }
 
-  // 자리표시자
-  var placeholder = figma.createFrame();
-  placeholder.name = el.alt || "이미지";
-  placeholder.resize(w, h);
-  placeholder.fills = [solid("#F1F3F5")];
-
-  var hint = figma.createText();
-  hint.fontName = { family: "Inter", style: "Medium" };
-  hint.fontSize = 13;
-  hint.characters = "사진을 추가하세요";
-  hint.fills = [solid("#9CA3AF")];
-  hint.textAlignHorizontal = "CENTER";
-  hint.resize(w, 18);
-  hint.x = 0;
-  hint.y = h / 2 - 9;
-  placeholder.appendChild(hint);
-
-  return placeholder;
+  return children;
 }
 
-// ── 인라인 스타일 파서 ──
-
-function extractInlineStyle(html) {
-  // 첫 번째 태그의 style 속성 추출
-  var match = html.match(/style="([^"]*)"/);
-  if (!match) return {};
-  return parseStyleString(match[1]);
+function getDirectText(html) {
+  // 자식 태그를 제거하고 직접 텍스트만 추출
+  var text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  text = text.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
+  return text;
 }
 
-function extractInlineStyleFromTag(tag) {
-  var match = tag.match(/style="([^"]*)"/);
-  if (!match) return {};
-  return parseStyleString(match[1]);
+function stripTags(html) {
+  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
 }
 
-function extractInlineStyleFromAttrs(attrs) {
-  var match = attrs.match(/style="([^"]*)"/);
-  if (!match) return {};
-  return parseStyleString(match[1]);
-}
-
-function parseStyleString(str) {
+function parseStyleAttr(attrs) {
+  var m = attrs.match(/style="([^"]*)"/);
+  if (!m) return {};
   var styles = {};
-  var parts = str.split(";");
+  var parts = m[1].split(";");
   for (var i = 0; i < parts.length; i++) {
-    var colonIdx = parts[i].indexOf(":");
-    if (colonIdx === -1) continue;
-    var key = parts[i].substring(0, colonIdx).trim().toLowerCase();
-    var val = parts[i].substring(colonIdx + 1).trim();
-    if (key && val) styles[key] = val;
+    var ci = parts[i].indexOf(":");
+    if (ci === -1) continue;
+    var k = parts[i].substring(0, ci).trim().toLowerCase();
+    var v = parts[i].substring(ci+1).trim();
+    if (k && v) styles[k] = v;
   }
   return styles;
 }
 
-// ── 스타일 값 추출 유틸리티 ──
+function getAttr(attrs, name) {
+  var re = new RegExp(name + '="([^"]*)"');
+  var m = attrs.match(re);
+  return m ? m[1] : "";
+}
 
-function getNumFromStyle(style, prop) {
+// ── 스타일 값 추출 ──
+
+function getNum(style, prop) {
   if (!style || !style[prop]) return 0;
-  var val = style[prop];
-  var m = val.match(/(\d+(?:\.\d+)?)/);
+  var m = style[prop].match(/(\d+(?:\.\d+)?)/);
   return m ? parseFloat(m[1]) : 0;
 }
 
-function getColorFromStyle(style, prop) {
+function getColor(style, prop) {
   if (!style || !style[prop]) return "";
   var val = style[prop].trim();
-
-  // hex
-  var hexMatch = val.match(/#([0-9a-fA-F]{3,8})/);
-  if (hexMatch) {
-    var hex = hexMatch[1];
-    if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
-    return "#" + hex.substring(0, 6);
+  var hm = val.match(/#([0-9a-fA-F]{3,8})/);
+  if (hm) {
+    var h = hm[1];
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    return "#" + h.substring(0,6);
   }
-
-  // rgb/rgba
-  var rgbMatch = val.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
-  if (rgbMatch) {
-    return "#" + parseInt(rgbMatch[1]).toString(16).padStart(2, "0") +
-                 parseInt(rgbMatch[2]).toString(16).padStart(2, "0") +
-                 parseInt(rgbMatch[3]).toString(16).padStart(2, "0");
-  }
-
-  // 명명된 색상
-  var named = {
-    black: "#000000", white: "#FFFFFF", red: "#FF0000", blue: "#0000FF",
-    green: "#008000", yellow: "#FFFF00", gray: "#808080", grey: "#808080",
-    transparent: "", inherit: "",
-  };
+  var rm = val.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (rm) return "#"+pad(rm[1])+pad(rm[2])+pad(rm[3]);
+  var named = {black:"#000000",white:"#FFFFFF",transparent:"",inherit:""};
   if (named[val.toLowerCase()] !== undefined) return named[val.toLowerCase()];
-
   return "";
 }
 
-// ── Figma 유틸리티 ──
+function pad(n) { return parseInt(n).toString(16).padStart(2,"0"); }
+
+// ── Figma 유틸 ──
 
 function solid(hex) {
   return { type: "SOLID", color: hexRgb(hex) };
 }
 
 function hexRgb(hex) {
-  hex = hex.replace("#", "");
-  if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
-  if (hex.length < 6) hex = "111827"; // 폴백
+  hex = hex.replace("#","");
+  if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+  if (hex.length < 6) hex = "111827";
   return {
-    r: parseInt(hex.substring(0, 2), 16) / 255,
-    g: parseInt(hex.substring(2, 4), 16) / 255,
-    b: parseInt(hex.substring(4, 6), 16) / 255,
+    r: parseInt(hex.substring(0,2),16)/255,
+    g: parseInt(hex.substring(2,4),16)/255,
+    b: parseInt(hex.substring(4,6),16)/255,
   };
 }
 
-function weightToStyle(w) {
+function wts(w) {
   if (w >= 700) return "Bold";
   if (w >= 600) return "Semi Bold";
   if (w >= 500) return "Medium";
   return "Regular";
+}
+
+function progress(step, pct) {
+  figma.ui.postMessage({ type: "progress", step: step, percent: pct });
 }
