@@ -2,8 +2,8 @@
   "name": "셀러들의 아지트 디자이너",
   "id": "sellerazit-designer-plugin",
   "api": "1.0.0",
-  "main": "code.js",
-  "ui": "ui.html",
+  "main": "plugin.js",
+  "ui": "panel.html",
   "editorType": ["figma"],
   "networkAccess": {
     "allowedDomains": [
