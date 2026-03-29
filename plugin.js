@@ -30,6 +30,9 @@ async function handleHtmlImport(html, title) {
 
     progress("HTML 파싱 중...", 10);
 
+    // 전역 CSS 클래스 파싱
+    parseGlobalStyles(html);
+
     // 캔버스 너비 추출
     var canvasWidth = 860;
     var wm = html.match(/width\s*:\s*(\d+)\s*px/);
@@ -77,6 +80,49 @@ async function handleHtmlImport(html, title) {
 
 // ── 핵심: HTML → Figma 노드 변환 (재귀) ──
 
+// 전역 CSS 클래스 맵 (<style> 블록에서 추출)
+var globalClasses = {};
+
+function parseGlobalStyles(html) {
+  var styleMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+  if (!styleMatch) return;
+  var css = styleMatch[1];
+  var ruleRe = /\.([a-zA-Z0-9_-]+)\s*\{([^}]*)\}/g;
+  var m;
+  while ((m = ruleRe.exec(css)) !== null) {
+    globalClasses[m[1]] = parseStyleString(m[2]);
+  }
+}
+
+function mergeClassStyles(attrs, inlineStyle) {
+  var classMatch = attrs.match(/class="([^"]*)"/);
+  if (!classMatch) return inlineStyle;
+  var classes = classMatch[1].split(/\s+/);
+  var merged = {};
+  for (var i = 0; i < classes.length; i++) {
+    var cls = globalClasses[classes[i]];
+    if (cls) {
+      for (var k in cls) merged[k] = cls[k];
+    }
+  }
+  // 인라인 스타일이 클래스보다 우선
+  for (var k in inlineStyle) merged[k] = inlineStyle[k];
+  return merged;
+}
+
+function parseStyleString(str) {
+  var styles = {};
+  var parts = str.split(";");
+  for (var i = 0; i < parts.length; i++) {
+    var ci = parts[i].indexOf(":");
+    if (ci === -1) continue;
+    var k = parts[i].substring(0, ci).trim().toLowerCase();
+    var v = parts[i].substring(ci+1).trim();
+    if (k && v) styles[k] = v;
+  }
+  return styles;
+}
+
 async function htmlToFigmaNode(html, parentWidth) {
   // 현재 태그 정보 추출
   var tagMatch = html.match(/^<(\w+)([^>]*)>/);
@@ -84,7 +130,8 @@ async function htmlToFigmaNode(html, parentWidth) {
 
   var tag = tagMatch[1].toLowerCase();
   var attrs = tagMatch[2] || "";
-  var style = parseStyleAttr(attrs);
+  var inlineStyle = parseStyleAttr(attrs);
+  var style = mergeClassStyles(attrs, inlineStyle);
 
   // 무시할 태그
   if (attrs.indexOf("data-element-toolbar") !== -1) return null;
@@ -111,6 +158,9 @@ async function htmlToFigmaNode(html, parentWidth) {
   var childTags = splitChildTags(innerHtml);
 
   // 텍스트 전용 요소 (자식 태그 없이 텍스트만)
+  // <style> 태그 건너뛰기
+  if (tag === "style" || tag === "script" || tag === "br") return null;
+
   var textTags = ["h1","h2","h3","h4","h5","h6","p","span","strong","em","li","blockquote","a"];
   if (textTags.indexOf(tag) !== -1 && childTags.length === 0 && directText) {
     return buildTextNode(directText, tag, style, parentWidth);
@@ -138,7 +188,11 @@ async function htmlToFigmaNode(html, parentWidth) {
 
   // 너비 결정
   var w = getNum(style, "width") || parentWidth;
-  if (style["width"] && style["width"].indexOf("100%") !== -1) w = parentWidth;
+  if (style["width"]) {
+    var pctMatch = style["width"].match(/(\d+)%/);
+    if (pctMatch) w = Math.round(parentWidth * parseInt(pctMatch[1]) / 100);
+    if (style["width"].indexOf("100%") !== -1) w = parentWidth;
+  }
   w = Math.min(w, parentWidth);
   frame.resize(w, 10);
 
@@ -163,7 +217,7 @@ async function htmlToFigmaNode(html, parentWidth) {
     frame.layoutWrap = "WRAP";
     var gap = getNum(style, "gap") || getNum(style, "column-gap") || 16;
     frame.itemSpacing = gap;
-  } else if (display.indexOf("flex") !== -1 && (flexDir === "row" || !flexDir || flexDir === "")) {
+  } else if (display.indexOf("flex") !== -1 && (flexDir === "row" || flexDir === "row-reverse" || !flexDir || flexDir === "")) {
     // Flex row → HORIZONTAL
     frame.layoutMode = "HORIZONTAL";
     frame.primaryAxisSizingMode = "FIXED";
@@ -174,6 +228,14 @@ async function htmlToFigmaNode(html, parentWidth) {
     // align-items
     var alignItems = style["align-items"] || "";
     if (alignItems === "center") frame.counterAxisAlignItems = "CENTER";
+
+    // flex:1 자식 개수 세서 균등 분배
+    var flexChildCount = 0;
+    for (var fi = 0; fi < childTags.length; fi++) {
+      var fAttrs = childTags[fi].match(/style="([^"]*)"/);
+      if (fAttrs && fAttrs[1].indexOf("flex") !== -1) flexChildCount++;
+    }
+    if (flexChildCount >= 2) colCount = flexChildCount;
   } else {
     // 기본 VERTICAL
     frame.layoutMode = "VERTICAL";
@@ -211,11 +273,15 @@ async function htmlToFigmaNode(html, parentWidth) {
   }
   var childWidth = colCount > 1 ? Math.floor((contentWidth - (colCount-1) * (getNum(style,"gap")||16)) / colCount) : contentWidth;
 
+  // flex-direction: row-reverse → 자식 순서 반전
+  var orderedChildren = childTags.slice();
+  if (flexDir === "row-reverse") orderedChildren.reverse();
+
   // 자식 노드 생성
-  for (var c = 0; c < childTags.length; c++) {
-    var childNode = await htmlToFigmaNode(childTags[c], childWidth);
+  for (var c = 0; c < orderedChildren.length; c++) {
+    var childNode = await htmlToFigmaNode(orderedChildren[c], childWidth);
     if (childNode) {
-      // grid 자식 너비 설정
+      // grid/flex 자식 너비 설정
       if (colCount > 1 && childNode.resize) {
         try { childNode.resize(childWidth, childNode.height); } catch(e) { /* skip */ }
       }
@@ -233,9 +299,17 @@ async function buildImgNode(attrs, style, parentWidth) {
   if (!src) return null;
 
   var w = getNum(style, "width") || parentWidth;
-  var h = getNum(style, "height") || 400;
-  if (style["width"] && style["width"].indexOf("100%") !== -1) w = parentWidth;
+  // 퍼센트 너비 처리
+  if (style["width"]) {
+    var pctMatch = style["width"].match(/(\d+)%/);
+    if (pctMatch) w = Math.round(parentWidth * parseInt(pctMatch[1]) / 100);
+    if (style["width"].indexOf("100%") !== -1) w = parentWidth;
+  }
   w = Math.min(w, parentWidth);
+
+  // height: auto → 너비 기준 3:4 비율
+  var h = getNum(style, "height");
+  if (!h || style["height"] === "auto") h = Math.round(w * 0.75);
 
   var br = getNum(style, "border-radius") || 0;
   var alt = getAttr(attrs, "alt") || "사진";
