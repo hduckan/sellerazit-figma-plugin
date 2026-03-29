@@ -159,7 +159,26 @@ async function htmlToFigmaNode(html, parentWidth) {
 
   // 텍스트 전용 요소 (자식 태그 없이 텍스트만)
   // <style> 태그 건너뛰기
-  if (tag === "style" || tag === "script" || tag === "br") return null;
+  if (tag === "style" || tag === "script") return null;
+  if (tag === "br") return null; // br은 텍스트 내 \n으로 처리됨
+
+  // table 관련 태그 → 텍스트 추출
+  if (tag === "table" || tag === "tbody" || tag === "thead") {
+    // table 내용을 행별로 추출
+    var tableText = stripTags(innerHtml).trim().replace(/\s+/g, " ");
+    if (tableText) return buildTextNode(tableText, "p", style, parentWidth);
+    return null;
+  }
+  if (tag === "tr") {
+    var rowText = stripTags(innerHtml).trim().replace(/\s+/g, "  |  ");
+    if (rowText) return buildTextNode(rowText, "p", style, parentWidth);
+    return null;
+  }
+  if (tag === "th" || tag === "td") {
+    var cellText = stripTags(innerHtml).trim();
+    if (cellText) return buildTextNode(cellText, tag === "th" ? "strong" : "p", style, parentWidth);
+    return null;
+  }
 
   var textTags = ["h1","h2","h3","h4","h5","h6","p","span","strong","em","li","blockquote","a"];
   if (textTags.indexOf(tag) !== -1 && childTags.length === 0 && directText) {
@@ -245,11 +264,12 @@ async function htmlToFigmaNode(html, parentWidth) {
     frame.itemSpacing = gap;
   }
 
-  // 패딩
-  var pt = getNum(style, "padding-top") || getNum(style, "padding") || 0;
-  var pr = getNum(style, "padding-right") || getNum(style, "padding") || 0;
-  var pb = getNum(style, "padding-bottom") || getNum(style, "padding") || 0;
-  var pl = getNum(style, "padding-left") || getNum(style, "padding") || 0;
+  // 패딩 (단축 속성 처리: "100px 48px" → 상하100 좌우48)
+  var padParsed = parsePaddingShorthand(style["padding"] || "");
+  var pt = getNum(style, "padding-top") || padParsed.top;
+  var pr = getNum(style, "padding-right") || padParsed.right;
+  var pb = getNum(style, "padding-bottom") || padParsed.bottom;
+  var pl = getNum(style, "padding-left") || padParsed.left;
   frame.paddingTop = pt;
   frame.paddingRight = pr;
   frame.paddingBottom = pb;
@@ -307,9 +327,13 @@ async function buildImgNode(attrs, style, parentWidth) {
   }
   w = Math.min(w, parentWidth);
 
-  // height: auto → 너비 기준 3:4 비율
+  // height 결정: 지정값 > auto는 너비 기준 2:3 > 기본 400
   var h = getNum(style, "height");
-  if (!h || style["height"] === "auto") h = Math.round(w * 0.75);
+  if (!h || style["height"] === "auto") {
+    // width가 작으면(아이콘) 정사각형, 크면 2:3
+    if (w <= 100) h = w;
+    else h = Math.round(w * 0.65);
+  }
 
   var br = getNum(style, "border-radius") || 0;
   var alt = getAttr(attrs, "alt") || "사진";
@@ -459,7 +483,7 @@ function getDirectText(html) {
 }
 
 function stripTags(html) {
-  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+  return html.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/[ \t]+/g, " ").trim()
     .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
 }
@@ -533,6 +557,20 @@ function wts(w) {
   if (w >= 600) return "Semi Bold";
   if (w >= 500) return "Medium";
   return "Regular";
+}
+
+// padding 단축 속성 파싱: "100px 48px" → {top:100, right:48, bottom:100, left:48}
+function parsePaddingShorthand(val) {
+  var result = { top: 0, right: 0, bottom: 0, left: 0 };
+  if (!val) return result;
+  var nums = val.match(/(\d+(?:\.\d+)?)/g);
+  if (!nums) return result;
+  var n = nums.map(function(v) { return parseFloat(v); });
+  if (n.length === 1) { result.top = result.right = result.bottom = result.left = n[0]; }
+  else if (n.length === 2) { result.top = result.bottom = n[0]; result.right = result.left = n[1]; }
+  else if (n.length === 3) { result.top = n[0]; result.right = result.left = n[1]; result.bottom = n[2]; }
+  else if (n.length >= 4) { result.top = n[0]; result.right = n[1]; result.bottom = n[2]; result.left = n[3]; }
+  return result;
 }
 
 function progress(step, pct) {
