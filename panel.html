@@ -73,9 +73,21 @@ function doImport() {
 
   // iframe에 HTML을 렌더링
   var iframe = document.getElementById('renderFrame');
-  var fullHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#fff;}</style></head><body>' + html + '</body></html>';
+  // HTML에서 캔버스 너비 추출
+  var widthMatch = html.match(/width\s*:\s*(\d+)\s*px/);
+  var canvasWidth = widthMatch ? parseInt(widthMatch[1]) : 860;
+  iframe.style.width = canvasWidth + 'px';
+
+  // Pretendard 폰트 로드 + 정확한 렌더링 환경
+  var fullHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+    '<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">' +
+    '<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#fff;font-family:"Pretendard","Noto Sans KR",sans-serif;}</style>' +
+    '</head><body>' + html + '</body></html>';
 
   iframe.onload = function() {
+    // 폰트 로딩 + 이미지 로딩 대기 (1초)
+    showProgress('폰트 & 이미지 로딩 중...', 15);
+    setTimeout(function() {
     try {
       showProgress('DOM 분석 중...', 20);
       var doc = iframe.contentDocument || iframe.contentWindow.document;
@@ -91,6 +103,7 @@ function doImport() {
       document.getElementById('btnImport').disabled = false;
       hideProgress();
     }
+    }, 1500); // 폰트 로딩 대기
   };
 
   // iframe에 HTML 쓰기
