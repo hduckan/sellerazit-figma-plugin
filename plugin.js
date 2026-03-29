@@ -27,8 +27,8 @@ async function handleImport(payload) {
       return;
     }
 
-    const page = payload.pages?.[0];
-    if (!page || !page.sections?.length) {
+    const page = payload.pages && payload.pages[0];
+    if (!page || !page.sections || !page.sections.length) {
       figma.notify("섹션 데이터가 없습니다.", { error: true });
       return;
     }
