@@ -1,0 +1,15 @@
+{
+  "name": "셀러아지트 디자이너",
+  "id": "sellerazit-designer-plugin",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "networkAccess": {
+    "allowedDomains": [
+      "designer.sellerazit.com",
+      "designer-sellerazit-production.up.railway.app",
+      "localhost"
+    ]
+  }
+}
