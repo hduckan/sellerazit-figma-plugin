@@ -3,52 +3,29 @@
 <head>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #f8fafc; color: #0f172a; padding: 20px; font-size: 13px;
-  }
-  .brand { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
-  .brand-icon { width: 28px; height: 28px; background: linear-gradient(135deg, #3b82f6, #6366f1); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 900; font-size: 14px; }
-  .brand-name { font-size: 15px; font-weight: 700; color: #0f172a; }
-  .brand-sub { font-size: 11px; color: #94a3b8; margin-left: 4px; }
-
-  .field { margin-bottom: 12px; }
-  .field label { display: block; font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .field textarea {
-    width: 100%; height: 320px; padding: 10px 12px; border: 1.5px solid #e2e8f0; border-radius: 10px;
-    font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; background: #fff;
-    transition: border 0.15s; line-height: 1.5; resize: vertical;
-  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #0f172a; padding: 20px; font-size: 13px; }
+  .brand { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+  .brand-icon { width: 24px; height: 24px; background: linear-gradient(135deg, #3b82f6, #6366f1); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 900; font-size: 12px; }
+  .brand-name { font-size: 14px; font-weight: 700; }
+  .brand-sub { font-size: 10px; color: #94a3b8; }
+  .badge { padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; background: #eff6ff; color: #3b82f6; margin-left: 6px; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 10px; font-weight: 600; color: #64748b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .field textarea { width: 100%; height: 200px; padding: 8px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 10px; font-family: monospace; background: #fff; resize: vertical; line-height: 1.4; }
   .field textarea:focus { outline: none; border-color: #3b82f6; }
-  .field input {
-    width: 100%; padding: 10px 12px; border: 1.5px solid #e2e8f0; border-radius: 10px;
-    font-size: 13px; background: #fff; margin-bottom: 8px;
-  }
-  .field input:focus { outline: none; border-color: #3b82f6; }
-
-  .action-btn {
-    width: 100%; padding: 12px; border: none; border-radius: 10px; font-size: 13px; font-weight: 700;
-    cursor: pointer; transition: all 0.15s; margin-top: 8px;
-    background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff;
-  }
-  .action-btn:hover { opacity: 0.9; transform: translateY(-1px); }
-  .action-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-
-  .progress-wrap { margin-top: 14px; display: none; }
+  .field input { width: 100%; padding: 8px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 12px; background: #fff; }
+  .action-btn { width: 100%; padding: 10px; border: none; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff; margin-top: 6px; }
+  .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .progress-wrap { margin-top: 10px; display: none; }
   .progress-wrap.on { display: block; }
-  .progress-bar { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
-  .progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #6366f1); border-radius: 3px; transition: width 0.3s; width: 0%; }
-  .progress-label { font-size: 11px; color: #64748b; margin-top: 6px; }
-
-  .toast { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 12px; display: none; }
+  .progress-bar { height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #6366f1); border-radius: 2px; transition: width 0.3s; width: 0%; }
+  .progress-label { font-size: 10px; color: #64748b; margin-top: 4px; }
+  .toast { margin-top: 8px; padding: 8px 10px; border-radius: 6px; font-size: 11px; display: none; }
   .toast.ok { display: block; background: #dcfce7; color: #166534; }
   .toast.err { display: block; background: #fef2f2; color: #991b1b; }
-
-  .guide { margin-top: 18px; padding: 14px; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; line-height: 1.8; }
-  .guide h4 { font-size: 12px; font-weight: 700; margin-bottom: 6px; color: #0f172a; }
-  .guide ol { padding-left: 18px; color: #475569; font-size: 12px; }
-  .guide a { color: #3b82f6; text-decoration: none; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; background: #eff6ff; color: #3b82f6; margin-left: 6px; }
+  /* 렌더링용 숨겨진 iframe */
+  #renderFrame { position: absolute; left: -9999px; top: 0; width: 860px; height: 100px; border: none; visibility: hidden; }
 </style>
 </head>
 <body>
@@ -62,12 +39,12 @@
 
 <div class="field">
   <label>프로젝트 이름</label>
-  <input type="text" id="titleBox" placeholder="상세페이지 이름 (선택)" value="">
+  <input type="text" id="titleBox" placeholder="상세페이지 이름 (선택)">
 </div>
 
 <div class="field">
   <label>HTML 코드</label>
-  <textarea id="htmlBox" placeholder="웹 빌더에서 HTML 버튼을 눌러 복사한 코드를 여기에 붙여넣으세요"></textarea>
+  <textarea id="htmlBox" placeholder="웹 빌더에서 HTML 복사 버튼을 눌러 복사한 코드를 여기에 붙여넣으세요"></textarea>
 </div>
 
 <button class="action-btn" id="btnImport" onclick="doImport()">Figma에 생성</button>
@@ -76,55 +53,139 @@
   <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
   <div class="progress-label" id="progressLabel"></div>
 </div>
-
 <div id="toast" class="toast"></div>
 
-<div class="guide">
-  <h4>사용법</h4>
-  <ol>
-    <li><a href="https://designer.sellerazit.com" target="_blank">designer.sellerazit.com</a>에서 상세페이지 만들기</li>
-    <li>에디터 상단의 <strong>HTML</strong> 버튼 클릭 → 전체 코드 복사</li>
-    <li>여기에 붙여넣기 → <strong>Figma에 생성</strong> 클릭</li>
-  </ol>
-</div>
+<!-- 숨겨진 iframe: HTML을 실제 렌더링하고 getComputedStyle로 읽기 -->
+<iframe id="renderFrame"></iframe>
 
 <script>
-function showToast(type, msg) {
-  var el = document.getElementById('toast');
-  el.className = 'toast ' + type;
-  el.textContent = msg;
-}
-
-function showProgress(step, pct) {
-  document.getElementById('progressWrap').classList.add('on');
-  document.getElementById('progressFill').style.width = pct + '%';
-  document.getElementById('progressLabel').textContent = step;
-}
-
-function hideProgress() {
-  document.getElementById('progressWrap').classList.remove('on');
-}
+function showToast(t, m) { var e = document.getElementById('toast'); e.className = 'toast ' + t; e.textContent = m; }
+function showProgress(s, p) { document.getElementById('progressWrap').classList.add('on'); document.getElementById('progressFill').style.width = p + '%'; document.getElementById('progressLabel').textContent = s; }
+function hideProgress() { document.getElementById('progressWrap').classList.remove('on'); }
 
 function doImport() {
   var html = document.getElementById('htmlBox').value.trim();
-  var title = document.getElementById('titleBox').value.trim();
-  if (!html) { showToast('err', 'HTML 코드를 입력해주세요'); return; }
-  if (html.indexOf('data-section-type') === -1) {
-    showToast('err', '셀러들의 아지트 디자이너에서 만든 HTML이 아닌 것 같습니다');
-    return;
-  }
-  showProgress('준비 중...', 5);
+  var title = document.getElementById('titleBox').value.trim() || '상세페이지';
+  if (!html) { showToast('err', 'HTML을 입력해주세요'); return; }
+
+  showProgress('렌더링 중...', 5);
   document.getElementById('btnImport').disabled = true;
-  parent.postMessage({ pluginMessage: { type: 'import-html', html: html, title: title || '상세페이지' } }, '*');
+
+  // iframe에 HTML을 렌더링
+  var iframe = document.getElementById('renderFrame');
+  var fullHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#fff;}</style></head><body>' + html + '</body></html>';
+
+  iframe.onload = function() {
+    try {
+      showProgress('DOM 분석 중...', 20);
+      var doc = iframe.contentDocument || iframe.contentWindow.document;
+      var body = doc.body;
+
+      // DOM → Figma 노드 트리 변환
+      var nodes = traverseDOM(body, doc);
+
+      showProgress('Figma에 전송 중...', 80);
+      parent.postMessage({ pluginMessage: { type: 'import-rendered', nodes: nodes, title: title } }, '*');
+    } catch(e) {
+      showToast('err', '변환 실패: ' + e.message);
+      document.getElementById('btnImport').disabled = false;
+      hideProgress();
+    }
+  };
+
+  // iframe에 HTML 쓰기
+  iframe.srcdoc = fullHtml;
 }
 
+// DOM 재귀 순회 → 노드 트리 생성
+function traverseDOM(el, doc) {
+  var result = [];
+  var children = el.children;
+
+  for (var i = 0; i < children.length; i++) {
+    var child = children[i];
+    var tag = child.tagName.toLowerCase();
+
+    // 무시할 태그
+    if (tag === 'style' || tag === 'script' || tag === 'meta' || tag === 'link') continue;
+    if (child.getAttribute('data-element-toolbar') || child.getAttribute('data-resize-handle')) continue;
+
+    var cs = window.getComputedStyle(child);
+    var rect = child.getBoundingClientRect();
+
+    // 보이지 않는 요소 무시
+    if (cs.display === 'none' || cs.visibility === 'hidden' || rect.width === 0) continue;
+
+    var node = {
+      tag: tag,
+      // 위치와 크기 (정확한 렌더링 결과)
+      x: Math.round(rect.left),
+      y: Math.round(rect.top),
+      w: Math.round(rect.width),
+      h: Math.round(rect.height),
+      // 스타일 (getComputedStyle — 실제 계산값)
+      bg: rgbToHex(cs.backgroundColor),
+      color: rgbToHex(cs.color),
+      fontSize: parseFloat(cs.fontSize),
+      fontWeight: parseInt(cs.fontWeight) || 400,
+      textAlign: cs.textAlign,
+      lineHeight: parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5,
+      letterSpacing: parseFloat(cs.letterSpacing) || 0,
+      borderRadius: parseFloat(cs.borderRadius) || 0,
+      opacity: parseFloat(cs.opacity),
+      // 패딩
+      paddingTop: parseFloat(cs.paddingTop) || 0,
+      paddingRight: parseFloat(cs.paddingRight) || 0,
+      paddingBottom: parseFloat(cs.paddingBottom) || 0,
+      paddingLeft: parseFloat(cs.paddingLeft) || 0,
+      // 레이아웃
+      display: cs.display,
+      flexDirection: cs.flexDirection,
+      gap: parseFloat(cs.gap) || 0,
+      alignItems: cs.alignItems,
+      justifyContent: cs.justifyContent,
+      // 이미지
+      src: tag === 'img' ? child.getAttribute('src') : null,
+      alt: tag === 'img' ? (child.getAttribute('alt') || '') : null,
+      // 텍스트 (직접 텍스트만, 자식 태그 텍스트 제외)
+      text: getDirectTextContent(child),
+      // 자식 노드 (재귀)
+      children: traverseDOM(child, doc)
+    };
+
+    result.push(node);
+  }
+
+  return result;
+}
+
+// 직접 텍스트만 추출 (자식 태그의 텍스트 제외)
+function getDirectTextContent(el) {
+  var text = '';
+  for (var i = 0; i < el.childNodes.length; i++) {
+    if (el.childNodes[i].nodeType === 3) { // TEXT_NODE
+      text += el.childNodes[i].textContent;
+    }
+  }
+  return text.trim();
+}
+
+// rgb(r,g,b) → #hex 변환
+function rgbToHex(rgb) {
+  if (!rgb || rgb === 'transparent' || rgb === 'rgba(0, 0, 0, 0)') return '';
+  var m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!m) return '';
+  return '#' + ((1 << 24) + (parseInt(m[1]) << 16) + (parseInt(m[2]) << 8) + parseInt(m[3])).toString(16).slice(1);
+}
+
+// 메시지 수신
 window.addEventListener('message', function(e) {
   var msg = e.data.pluginMessage;
   if (!msg) return;
   if (msg.type === 'progress') showProgress(msg.step, msg.percent);
   if (msg.type === 'done') {
     hideProgress();
-    showToast('ok', msg.count + '개 섹션이 생성되었습니다!');
+    showToast('ok', msg.count + '개 노드가 생성되었습니다!');
     document.getElementById('btnImport').disabled = false;
   }
   if (msg.type === 'fail') {
