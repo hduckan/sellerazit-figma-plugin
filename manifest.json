@@ -8,7 +8,8 @@
   "networkAccess": {
     "allowedDomains": [
       "https://designer.sellerazit.com",
-      "https://designer-sellerazit-production.up.railway.app"
+      "https://designer-sellerazit-production.up.railway.app",
+      "https://cuqpctvtlianctbdgove.supabase.co"
     ],
     "devAllowedDomains": [
       "http://localhost"
