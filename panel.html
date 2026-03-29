@@ -167,15 +167,8 @@ window.addEventListener('message', e => {
   }
 });
 
-document.addEventListener('DOMContentLoaded', async () => {
-  try {
-    const t = await navigator.clipboard.readText();
-    if (t && t.includes('"SELLERAZIT_IMPORT"')) {
-      document.getElementById('jsonBox').value = t;
-      showToast('ok', '클립보드에서 자동으로 가져왔습니다');
-    }
-  } catch (e) { /* skip */ }
-});
+// 클립보드 자동 감지는 Figma 플러그인 환경에서 차단되므로 제거
+// 사용자가 직접 Ctrl+V로 붙여넣으면 됩니다
 </script>
 </body>
 </html>

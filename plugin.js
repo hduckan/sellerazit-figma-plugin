@@ -21,14 +21,44 @@ figma.ui.onmessage = async (msg) => {
 // 메인 임포트 로직
 async function handleImport(payload) {
   try {
-    // 스키마 검증
-    if (!payload || payload.type !== "SELLERAZIT_IMPORT") {
-      figma.notify("셀러들의 아지트 형식이 아닙니다.", { error: true });
+    if (!payload) {
+      figma.notify("JSON 데이터가 없습니다.", { error: true });
       return;
     }
 
-    const page = payload.pages && payload.pages[0];
-    if (!page || !page.sections || !page.sections.length) {
+    // 두 형식 모두 지원: SELLERAZIT_IMPORT (새) + CREATE_LAYOUT (이전)
+    var page, sections;
+    if (payload.type === "SELLERAZIT_IMPORT" && payload.pages) {
+      page = payload.pages[0];
+      sections = page && page.sections;
+    } else if (payload.type === "CREATE_LAYOUT" && payload.data) {
+      // 이전 형식 호환
+      var layout = payload.data.layout || payload.data;
+      page = { title: layout.name, width: layout.width };
+      sections = [];
+      if (layout.children) {
+        for (var i = 0; i < layout.children.length; i++) {
+          var s = layout.children[i];
+          var elements = [];
+          if (s.children) {
+            for (var j = 0; j < s.children.length; j++) {
+              var c = s.children[j];
+              if (c.type === "TEXT") {
+                elements.push({ tag: "text", role: c.name, value: c.content, size: c.fontSize, weight: c.fontWeight, color: c.color, align: c.textAlign, width: c.width });
+              } else if (c.type === "IMAGE_AREA") {
+                elements.push({ tag: "image", role: c.name, src: c.src, width: c.width, height: c.height });
+              }
+            }
+          }
+          sections.push({ id: s.name, bg: s.background, elements: elements });
+        }
+      }
+    } else {
+      figma.notify("지원하지 않는 JSON 형식입니다.", { error: true });
+      return;
+    }
+
+    if (!sections || !sections.length) {
       figma.notify("섹션 데이터가 없습니다.", { error: true });
       return;
     }
@@ -55,11 +85,11 @@ async function handleImport(payload) {
     root.counterAxisSizingMode = "FIXED";
     root.fills = [solid("#FFFFFF")];
 
-    const total = page.sections.length;
+    const total = sections.length;
 
     // 섹션 순회
     for (let i = 0; i < total; i++) {
-      const section = page.sections[i];
+      const section = sections[i];
       figma.ui.postMessage({
         type: "progress",
         step: `섹션 ${i + 1}/${total} 생성 중...`,
@@ -218,7 +248,7 @@ async function loadImageAsync(frame, url, w, h) {
     for (const child of children) child.remove();
 
     frame.appendChild(rect);
-  } catch {
+  } catch (e) {
     // 이미지 로드 실패 시 안내 텍스트 유지
   }
 }
