@@ -7,8 +7,8 @@
   "editorType": ["figma"],
   "networkAccess": {
     "allowedDomains": [
-      "designer.sellerazit.com",
-      "designer-sellerazit-production.up.railway.app"
+      "https://designer.sellerazit.com",
+      "https://designer-sellerazit-production.up.railway.app"
     ],
     "devAllowedDomains": [
       "http://localhost"
