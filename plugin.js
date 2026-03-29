@@ -43,7 +43,7 @@ async function handleImport(payload) {
       { family: "Inter", style: "Bold" },
     ];
     for (const f of fonts) {
-      try { await figma.loadFontAsync(f); } catch {}
+      try { await figma.loadFontAsync(f); } catch (e) { /* skip */ }
     }
 
     // 최상위 프레임

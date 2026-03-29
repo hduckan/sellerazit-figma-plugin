@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('jsonBox').value = t;
       showToast('ok', '클립보드에서 자동으로 가져왔습니다');
     }
-  } catch {}
+  } catch (e) { /* skip */ }
 });
 </script>
 </body>
