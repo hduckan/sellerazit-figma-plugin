@@ -165,10 +165,23 @@ window.addEventListener('message', e => {
     document.getElementById('btnImport').disabled = false;
     document.getElementById('btnFetch').disabled = false;
   }
+  // 이미지 로드 요청 처리 (code.js → UI → fetch → byte array → code.js)
+  if (msg.type === 'load-image') {
+    fetchImageBytes(msg.url, msg.nodeId);
+  }
 });
 
-// 클립보드 자동 감지는 Figma 플러그인 환경에서 차단되므로 제거
-// 사용자가 직접 Ctrl+V로 붙여넣으면 됩니다
+async function fetchImageBytes(url, nodeId) {
+  try {
+    var res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var buffer = await res.arrayBuffer();
+    var bytes = Array.from(new Uint8Array(buffer));
+    parent.postMessage({ pluginMessage: { type: 'image-bytes', nodeId: nodeId, bytes: bytes } }, '*');
+  } catch (e) {
+    // 이미지 로드 실패 — 무시 (안내 텍스트 유지)
+  }
+}
 </script>
 </body>
 </html>

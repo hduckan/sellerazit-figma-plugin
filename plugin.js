@@ -8,10 +8,35 @@
 
 figma.showUI(__html__, { width: 460, height: 580 });
 
+// 이미지 로딩 대기 맵
+var pendingImages = {};
+
 // 메시지 핸들러
 figma.ui.onmessage = async (msg) => {
   if (msg.type === "import-page") {
     await handleImport(msg.payload);
+  }
+  if (msg.type === "image-bytes") {
+    // UI에서 가져온 이미지 바이트 처리
+    var info = pendingImages[msg.nodeId];
+    if (info) {
+      try {
+        var imgData = figma.createImage(new Uint8Array(msg.bytes));
+        var rect = figma.createRectangle();
+        rect.name = "사진";
+        rect.resize(info.w, info.h);
+        rect.cornerRadius = 10;
+        rect.fills = [{ type: "IMAGE", imageHash: imgData.hash, scaleMode: "FILL" }];
+        // 기존 안내 텍스트 제거
+        var children = [];
+        for (var i = 0; i < info.frame.children.length; i++) children.push(info.frame.children[i]);
+        for (var i = 0; i < children.length; i++) children[i].remove();
+        info.frame.appendChild(rect);
+      } catch (e) {
+        // 실패 시 안내 텍스트 유지
+      }
+      delete pendingImages[msg.nodeId];
+    }
   }
   if (msg.type === "close") {
     figma.closePlugin();
@@ -196,9 +221,11 @@ function renderImage(el, availWidth) {
   hint.y = h / 2 - 9;
   frame.appendChild(hint);
 
-  // 이미지 URL이 있으면 로드 시도
+  // 이미지 URL이 있으면 UI를 통해 로드 요청
   if (el.src) {
-    loadImageAsync(frame, el.src, w, h);
+    var nodeId = frame.id;
+    pendingImages[nodeId] = { frame: frame, w: w, h: h };
+    figma.ui.postMessage({ type: "load-image", url: el.src, nodeId: nodeId });
   }
 
   return frame;
@@ -234,24 +261,6 @@ function renderRule(availWidth) {
 
 // ── 이미지 비동기 로드 ──
 
-async function loadImageAsync(frame, url, w, h) {
-  try {
-    const image = await figma.createImageAsync(url);
-    const rect = figma.createRectangle();
-    rect.name = "사진";
-    rect.resize(w, h);
-    rect.cornerRadius = 10;
-    rect.fills = [{ type: "IMAGE", imageHash: image.hash, scaleMode: "FILL" }];
-
-    // 기존 안내 텍스트 제거
-    const children = [...frame.children];
-    for (const child of children) child.remove();
-
-    frame.appendChild(rect);
-  } catch (e) {
-    // 이미지 로드 실패 시 안내 텍스트 유지
-  }
-}
 
 // ── 유틸리티 ──
 
