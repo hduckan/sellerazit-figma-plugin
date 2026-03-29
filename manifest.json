@@ -8,8 +8,11 @@
   "networkAccess": {
     "allowedDomains": [
       "designer.sellerazit.com",
-      "designer-sellerazit-production.up.railway.app",
-      "localhost"
-    ]
+      "designer-sellerazit-production.up.railway.app"
+    ],
+    "devAllowedDomains": [
+      "http://localhost"
+    ],
+    "reasoning": "셀러들의 아지트 디자이너 웹에서 JSON을 가져오기 위해 필요합니다"
   }
 }
