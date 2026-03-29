@@ -9,7 +9,9 @@
     "allowedDomains": [
       "https://designer.sellerazit.com",
       "https://designer-sellerazit-production.up.railway.app",
-      "https://cuqpctvtlianctbdgove.supabase.co"
+      "https://cuqpctvtlianctbdgove.supabase.co",
+      "https://cdn.jsdelivr.net",
+      "https://assets.editor.dsc.kr"
     ],
     "devAllowedDomains": [
       "http://localhost"
