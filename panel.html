@@ -11,9 +11,8 @@
   .badge { padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; background: #eff6ff; color: #3b82f6; margin-left: 6px; }
   .field { margin-bottom: 10px; }
   .field label { display: block; font-size: 10px; font-weight: 600; color: #64748b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .field textarea { width: 100%; height: 200px; padding: 8px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 10px; font-family: monospace; background: #fff; resize: vertical; line-height: 1.4; }
+  .field textarea { width: 100%; height: 280px; padding: 8px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 10px; font-family: monospace; background: #fff; resize: vertical; line-height: 1.4; }
   .field textarea:focus { outline: none; border-color: #3b82f6; }
-  .field input { width: 100%; padding: 8px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 12px; background: #fff; }
   .action-btn { width: 100%; padding: 10px; border: none; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff; margin-top: 6px; }
   .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .progress-wrap { margin-top: 10px; display: none; }
@@ -24,8 +23,9 @@
   .toast { margin-top: 8px; padding: 8px 10px; border-radius: 6px; font-size: 11px; display: none; }
   .toast.ok { display: block; background: #dcfce7; color: #166534; }
   .toast.err { display: block; background: #fef2f2; color: #991b1b; }
-  /* 렌더링용 숨겨진 iframe */
-  #renderFrame { position: absolute; left: -9999px; top: 0; width: 860px; height: 100px; border: none; visibility: hidden; }
+  .guide { margin-top: 12px; padding: 12px; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px; line-height: 1.7; font-size: 11px; color: #475569; }
+  .guide h4 { font-size: 11px; font-weight: 700; margin-bottom: 4px; color: #0f172a; }
+  .guide ol { padding-left: 16px; }
 </style>
 </head>
 <body>
@@ -34,17 +34,12 @@
   <div class="brand-icon">A</div>
   <span class="brand-name">셀러들의 아지트</span>
   <span class="brand-sub">디자이너</span>
-  <span class="badge">HTML to Figma</span>
+  <span class="badge">HTML to Figma v4</span>
 </div>
 
 <div class="field">
-  <label>프로젝트 이름</label>
-  <input type="text" id="titleBox" placeholder="상세페이지 이름 (선택)">
-</div>
-
-<div class="field">
-  <label>HTML 코드</label>
-  <textarea id="htmlBox" placeholder="웹 빌더에서 HTML 복사 버튼을 눌러 복사한 코드를 여기에 붙여넣으세요"></textarea>
+  <label>서버 렌더링 JSON (Figma JSON 버튼으로 복사한 내용)</label>
+  <textarea id="jsonBox" placeholder="웹 빌더에서 'Figma JSON' 버튼을 클릭하면 서버에서 렌더링한 정확한 데이터가 복사됩니다. 여기에 Ctrl+V로 붙여넣으세요."></textarea>
 </div>
 
 <button class="action-btn" id="btnImport" onclick="doImport()">Figma에 생성</button>
@@ -55,8 +50,14 @@
 </div>
 <div id="toast" class="toast"></div>
 
-<!-- 숨겨진 iframe: HTML을 실제 렌더링하고 getComputedStyle로 읽기 -->
-<iframe id="renderFrame"></iframe>
+<div class="guide">
+  <h4>사용법</h4>
+  <ol>
+    <li>웹 에디터에서 <strong>이미지 내보내기 ▾ → Figma JSON</strong> 클릭</li>
+    <li>서버에서 렌더링된 JSON이 클립보드에 복사됩니다</li>
+    <li>여기에 <strong>Ctrl+V</strong>로 붙여넣기 → <strong>Figma에 생성</strong></li>
+  </ol>
+</div>
 
 <script>
 function showToast(t, m) { var e = document.getElementById('toast'); e.className = 'toast ' + t; e.textContent = m; }
@@ -64,134 +65,22 @@ function showProgress(s, p) { document.getElementById('progressWrap').classList.
 function hideProgress() { document.getElementById('progressWrap').classList.remove('on'); }
 
 function doImport() {
-  var html = document.getElementById('htmlBox').value.trim();
-  var title = document.getElementById('titleBox').value.trim() || '상세페이지';
-  if (!html) { showToast('err', 'HTML을 입력해주세요'); return; }
-
-  showProgress('렌더링 중...', 5);
-  document.getElementById('btnImport').disabled = true;
-
-  // iframe에 HTML을 렌더링
-  var iframe = document.getElementById('renderFrame');
-  // HTML에서 캔버스 너비 추출
-  var widthMatch = html.match(/width\s*:\s*(\d+)\s*px/);
-  var canvasWidth = widthMatch ? parseInt(widthMatch[1]) : 860;
-  iframe.style.width = canvasWidth + 'px';
-
-  // Pretendard 폰트 로드 + 정확한 렌더링 환경
-  var fullHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
-    '<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">' +
-    '<style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#fff;font-family:"Pretendard","Noto Sans KR",sans-serif;}</style>' +
-    '</head><body>' + html + '</body></html>';
-
-  iframe.onload = function() {
-    // 폰트 로딩 + 이미지 로딩 대기 (1초)
-    showProgress('폰트 & 이미지 로딩 중...', 15);
-    setTimeout(function() {
-    try {
-      showProgress('DOM 분석 중...', 20);
-      var doc = iframe.contentDocument || iframe.contentWindow.document;
-      var body = doc.body;
-
-      // DOM → Figma 노드 트리 변환
-      var nodes = traverseDOM(body, doc);
-
-      showProgress('Figma에 전송 중...', 80);
-      parent.postMessage({ pluginMessage: { type: 'import-rendered', nodes: nodes, title: title } }, '*');
-    } catch(e) {
-      showToast('err', '변환 실패: ' + e.message);
-      document.getElementById('btnImport').disabled = false;
-      hideProgress();
+  var raw = document.getElementById('jsonBox').value.trim();
+  if (!raw) { showToast('err', 'JSON을 입력해주세요'); return; }
+  try {
+    var data = JSON.parse(raw);
+    if (data.type !== 'SELLERAZIT_RENDERED') {
+      showToast('err', '서버 렌더링 JSON이 아닙니다. 웹에서 Figma JSON 버튼을 클릭해주세요.');
+      return;
     }
-    }, 1500); // 폰트 로딩 대기
-  };
-
-  // iframe에 HTML 쓰기
-  iframe.srcdoc = fullHtml;
-}
-
-// DOM 재귀 순회 → 노드 트리 생성
-function traverseDOM(el, doc) {
-  var result = [];
-  var children = el.children;
-
-  for (var i = 0; i < children.length; i++) {
-    var child = children[i];
-    var tag = child.tagName.toLowerCase();
-
-    // 무시할 태그
-    if (tag === 'style' || tag === 'script' || tag === 'meta' || tag === 'link') continue;
-    if (child.getAttribute('data-element-toolbar') || child.getAttribute('data-resize-handle')) continue;
-
-    var cs = window.getComputedStyle(child);
-    var rect = child.getBoundingClientRect();
-
-    // 보이지 않는 요소 무시
-    if (cs.display === 'none' || cs.visibility === 'hidden' || rect.width === 0) continue;
-
-    var node = {
-      tag: tag,
-      // 위치와 크기 (정확한 렌더링 결과)
-      x: Math.round(rect.left),
-      y: Math.round(rect.top),
-      w: Math.round(rect.width),
-      h: Math.round(rect.height),
-      // 스타일 (getComputedStyle — 실제 계산값)
-      bg: rgbToHex(cs.backgroundColor),
-      color: rgbToHex(cs.color),
-      fontSize: parseFloat(cs.fontSize),
-      fontWeight: parseInt(cs.fontWeight) || 400,
-      textAlign: cs.textAlign,
-      lineHeight: parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5,
-      letterSpacing: parseFloat(cs.letterSpacing) || 0,
-      borderRadius: parseFloat(cs.borderRadius) || 0,
-      opacity: parseFloat(cs.opacity),
-      // 패딩
-      paddingTop: parseFloat(cs.paddingTop) || 0,
-      paddingRight: parseFloat(cs.paddingRight) || 0,
-      paddingBottom: parseFloat(cs.paddingBottom) || 0,
-      paddingLeft: parseFloat(cs.paddingLeft) || 0,
-      // 레이아웃
-      display: cs.display,
-      flexDirection: cs.flexDirection,
-      gap: parseFloat(cs.gap) || 0,
-      alignItems: cs.alignItems,
-      justifyContent: cs.justifyContent,
-      // 이미지
-      src: tag === 'img' ? child.getAttribute('src') : null,
-      alt: tag === 'img' ? (child.getAttribute('alt') || '') : null,
-      // 텍스트 (직접 텍스트만, 자식 태그 텍스트 제외)
-      text: getDirectTextContent(child),
-      // 자식 노드 (재귀)
-      children: traverseDOM(child, doc)
-    };
-
-    result.push(node);
+    showProgress('Figma에 전송 중...', 10);
+    document.getElementById('btnImport').disabled = true;
+    parent.postMessage({ pluginMessage: { type: 'import-rendered', nodes: data.nodes, title: data.title } }, '*');
+  } catch(e) {
+    showToast('err', 'JSON 형식 오류: ' + e.message);
   }
-
-  return result;
 }
 
-// 직접 텍스트만 추출 (자식 태그의 텍스트 제외)
-function getDirectTextContent(el) {
-  var text = '';
-  for (var i = 0; i < el.childNodes.length; i++) {
-    if (el.childNodes[i].nodeType === 3) { // TEXT_NODE
-      text += el.childNodes[i].textContent;
-    }
-  }
-  return text.trim();
-}
-
-// rgb(r,g,b) → #hex 변환
-function rgbToHex(rgb) {
-  if (!rgb || rgb === 'transparent' || rgb === 'rgba(0, 0, 0, 0)') return '';
-  var m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  if (!m) return '';
-  return '#' + ((1 << 24) + (parseInt(m[1]) << 16) + (parseInt(m[2]) << 8) + parseInt(m[3])).toString(16).slice(1);
-}
-
-// 메시지 수신
 window.addEventListener('message', function(e) {
   var msg = e.data.pluginMessage;
   if (!msg) return;
