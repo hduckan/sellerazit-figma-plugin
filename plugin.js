@@ -155,36 +155,63 @@ async function createImageNode(n, parent, offsetX, offsetY) {
   }
 }
 
-// 텍스트 노드 생성
+// 텍스트 노드 생성 (segments 지원 — 부분별 다른 스타일)
 function createTextNode(n, parent, offsetX, offsetY) {
   if (!n.text) return;
 
   var node = figma.createText();
   node.name = n.tag || "text";
-  node.fontName = { family: fontFamily(), style: wts(n.fontWeight || 400) };
-  node.fontSize = n.fontSize || 16;
-  node.characters = n.text;
 
+  // 기본 스타일 먼저 적용
+  var baseFontSize = n.fontSize || 16;
+  var baseWeight = n.fontWeight || 400;
+  node.fontName = { family: fontFamily(), style: wts(baseWeight) };
+  node.fontSize = baseFontSize;
+  node.characters = n.text;
   if (n.color) node.fills = [solid(n.color)];
+
+  // segments가 있으면 부분별 스타일 적용
+  if (n.segments && n.segments.length > 1) {
+    var pos = 0;
+    for (var si = 0; si < n.segments.length; si++) {
+      var seg = n.segments[si];
+      var segText = seg.text;
+      // 텍스트에서 이 segment의 위치 찾기
+      var idx = n.text.indexOf(segText, pos);
+      if (idx === -1) continue;
+      var start = idx;
+      var end = idx + segText.length;
+      if (start >= end || end > n.text.length) continue;
+
+      try {
+        // 해당 범위에 폰트 로드 + 적용
+        var segStyle = wts(seg.fontWeight || baseWeight);
+        node.setRangeFontName(start, end, { family: fontFamily(), style: segStyle });
+        if (seg.fontSize && seg.fontSize !== baseFontSize) {
+          node.setRangeFontSize(start, end, seg.fontSize);
+        }
+        if (seg.color && seg.color !== n.color) {
+          node.setRangeFills(start, end, [solid(seg.color)]);
+        }
+      } catch (e) { /* skip range errors */ }
+
+      pos = end;
+    }
+  }
 
   var w = Math.max(n.w, 20);
   node.resize(w, Math.max(n.h, node.height));
   node.textAutoResize = "HEIGHT";
 
-  // 정밀 좌표 (소수점 반올림)
   node.x = Math.round((n.x - offsetX) * 10) / 10;
   node.y = Math.round((n.y - offsetY) * 10) / 10;
 
-  // 정렬
   if (n.textAlign === "center") node.textAlignHorizontal = "CENTER";
   else if (n.textAlign === "right" || n.textAlign === "end") node.textAlignHorizontal = "RIGHT";
 
-  // 행간
   if (n.lineHeight && n.lineHeight > 0) {
     node.lineHeight = { value: n.lineHeight, unit: "PIXELS" };
   }
-
-  // 자간
   if (n.letterSpacing && n.letterSpacing !== 0) {
     node.letterSpacing = { value: n.letterSpacing, unit: "PIXELS" };
   }
@@ -215,8 +242,30 @@ function createFrameNode(n, parent, offsetX, offsetY) {
     frame.opacity = n.opacity;
   }
 
-  // 클리핑 (overflow hidden 효과)
+  // 클리핑
   frame.clipsContent = false;
+
+  // box-shadow → Figma dropShadow
+  if (n.boxShadow && n.boxShadow !== "none") {
+    try {
+      var shadowMatch = n.boxShadow.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)\s+(\d+)px\s+(\d+)px\s+(\d+)px/);
+      if (shadowMatch) {
+        frame.effects = [{
+          type: "DROP_SHADOW",
+          visible: true,
+          blendMode: "NORMAL",
+          color: {
+            r: parseInt(shadowMatch[1]) / 255,
+            g: parseInt(shadowMatch[2]) / 255,
+            b: parseInt(shadowMatch[3]) / 255,
+            a: parseFloat(shadowMatch[4] || "1"),
+          },
+          offset: { x: parseInt(shadowMatch[5]), y: parseInt(shadowMatch[6]) },
+          radius: parseInt(shadowMatch[7]),
+        }];
+      }
+    } catch (e) { /* skip */ }
+  }
 
   parent.appendChild(frame);
   return frame;
