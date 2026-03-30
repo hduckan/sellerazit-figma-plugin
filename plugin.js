@@ -11,6 +11,8 @@
 
 figma.showUI(__html__, { width: 480, height: 560 });
 
+var hasPretendard = false;
+
 figma.ui.onmessage = async function(msg) {
   if (msg.type === "import-rendered") {
     await buildFromRendered(msg.nodes, msg.title);
@@ -24,14 +26,23 @@ async function buildFromRendered(nodes, title) {
   try {
     figma.ui.postMessage({ type: "progress", step: "폰트 로딩 중...", percent: 5 });
 
+    // Pretendard 우선, 실패 시 Inter 폴백
     var fonts = [
+      { family: "Pretendard", style: "Regular" },
+      { family: "Pretendard", style: "Medium" },
+      { family: "Pretendard", style: "SemiBold" },
+      { family: "Pretendard", style: "Bold" },
+      { family: "Pretendard", style: "ExtraBold" },
       { family: "Inter", style: "Regular" },
       { family: "Inter", style: "Medium" },
       { family: "Inter", style: "Semi Bold" },
       { family: "Inter", style: "Bold" },
     ];
     for (var i = 0; i < fonts.length; i++) {
-      try { await figma.loadFontAsync(fonts[i]); } catch (e) { /* skip */ }
+      try {
+        await figma.loadFontAsync(fonts[i]);
+        if (fonts[i].family === "Pretendard") hasPretendard = true;
+      } catch (e) { /* skip */ }
     }
 
     figma.ui.postMessage({ type: "progress", step: "Figma 레이아웃 생성 중...", percent: 15 });
@@ -106,7 +117,7 @@ async function createNodes(nodes, parent, offsetX, offsetY, created, total) {
       // 이 프레임에 직접 텍스트가 있으면 텍스트 노드도 추가
       if (n.text) {
         var textNode = figma.createText();
-        textNode.fontName = { family: "Inter", style: wts(n.fontWeight || 400) };
+        textNode.fontName = { family: fontFamily(), style: wts(n.fontWeight || 400) };
         textNode.fontSize = n.fontSize || 16;
         textNode.characters = n.text;
         if (n.color) textNode.fills = [solid(n.color)];
@@ -164,7 +175,7 @@ function createTextNode(n, parent, offsetX, offsetY) {
 
   var node = figma.createText();
   node.name = n.tag || "text";
-  node.fontName = { family: "Inter", style: wts(n.fontWeight || 400) };
+  node.fontName = { family: fontFamily(), style: wts(n.fontWeight || 400) };
   node.fontSize = n.fontSize || 16;
   node.characters = n.text;
 
@@ -218,7 +229,7 @@ function createFrameNode(n, parent, offsetX, offsetY) {
   }
 
   // 클리핑 (overflow hidden 효과)
-  frame.clipsContent = true;
+  frame.clipsContent = false;
 
   parent.appendChild(frame);
   return frame;
@@ -252,8 +263,13 @@ function hexRgb(hex) {
 }
 
 function wts(w) {
+  if (w >= 800) return hasPretendard ? "ExtraBold" : "Bold";
   if (w >= 700) return "Bold";
-  if (w >= 600) return "Semi Bold";
+  if (w >= 600) return hasPretendard ? "SemiBold" : "Semi Bold";
   if (w >= 500) return "Medium";
   return "Regular";
+}
+
+function fontFamily() {
+  return hasPretendard ? "Pretendard" : "Inter";
 }
