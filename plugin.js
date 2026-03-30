@@ -107,24 +107,10 @@ async function createNodes(nodes, parent, offsetX, offsetY, created, total) {
       continue;
     }
 
-    // 텍스트가 있고 자식도 있는 노드 → 프레임 + 텍스트
-    // 자식이 있는 노드 → 프레임
+    // 자식이 있는 노드 → 프레임 (부모 직접 텍스트는 무시 — 자식이 이미 포함)
     if (n.children && n.children.length > 0) {
       var frame = createFrameNode(n, parent, offsetX, offsetY);
-      // 자식 노드 생성 (부모의 위치를 offset으로 전달)
       await createNodes(n.children, frame, n.x, n.y, created, total);
-
-      // 이 프레임에 직접 텍스트가 있으면 텍스트 노드도 추가
-      if (n.text) {
-        var textNode = figma.createText();
-        textNode.fontName = { family: fontFamily(), style: wts(n.fontWeight || 400) };
-        textNode.fontSize = n.fontSize || 16;
-        textNode.characters = n.text;
-        if (n.color) textNode.fills = [solid(n.color)];
-        textNode.resize(n.w - n.paddingLeft - n.paddingRight, textNode.height);
-        textNode.textAutoResize = "HEIGHT";
-        frame.appendChild(textNode);
-      }
       continue;
     }
 
@@ -182,11 +168,12 @@ function createTextNode(n, parent, offsetX, offsetY) {
   if (n.color) node.fills = [solid(n.color)];
 
   var w = Math.max(n.w, 20);
-  node.resize(w, node.height);
+  node.resize(w, Math.max(n.h, node.height));
   node.textAutoResize = "HEIGHT";
 
-  node.x = n.x - offsetX;
-  node.y = n.y - offsetY;
+  // 정밀 좌표 (소수점 반올림)
+  node.x = Math.round((n.x - offsetX) * 10) / 10;
+  node.y = Math.round((n.y - offsetY) * 10) / 10;
 
   // 정렬
   if (n.textAlign === "center") node.textAlignHorizontal = "CENTER";
@@ -210,8 +197,8 @@ function createFrameNode(n, parent, offsetX, offsetY) {
   var frame = figma.createFrame();
   frame.name = n.tag || "frame";
   frame.resize(Math.max(n.w, 1), Math.max(n.h, 1));
-  frame.x = n.x - offsetX;
-  frame.y = n.y - offsetY;
+  frame.x = Math.round((n.x - offsetX) * 10) / 10;
+  frame.y = Math.round((n.y - offsetY) * 10) / 10;
 
   // 배경색
   if (n.bg) {
